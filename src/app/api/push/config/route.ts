@@ -10,7 +10,6 @@ export async function GET() {
       {
         configured: true,
         publicKey: config.publicKey,
-        requiresToken: Boolean(config.adminToken),
       },
       { headers: { "Cache-Control": "no-store" } },
     );
@@ -24,7 +23,6 @@ export async function GET() {
       {
         configured: false,
         publicKey: null,
-        requiresToken: process.env.NODE_ENV === "production",
         message,
       },
       { headers: { "Cache-Control": "no-store" } },

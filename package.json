@@ -1,5 +1,5 @@
 {
-  "name": "hyperscope-push-mvp",
+  "name": "hyperscope",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -9,25 +9,33 @@
     "dev": "next dev",
     "dev:https": "next dev --experimental-https",
     "build": "next build",
+    "build:worker": "esbuild src/worker.ts --bundle --platform=node --target=node22 --format=cjs --external:pg-native --outfile=dist-worker/worker.cjs",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "typecheck": "next typegen && tsc --noEmit",
+    "worker": "node --env-file-if-exists=.env.local dist-worker/worker.cjs",
     "vapid:generate": "web-push generate-vapid-keys --json"
   },
   "dependencies": {
     "lucide-react": "^1.30.0",
     "next": "16.3.0",
+    "pg": "^8.22.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/pg": "^8.20.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/web-push": "^3.6.4",
+    "esbuild": "^0.28.1",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "pg-mem": "^3.0.14",
+    "tsx": "^4.23.11",
     "typescript": "^5"
   }
 }

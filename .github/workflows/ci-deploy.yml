@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   verify:
-    name: Lint, typecheck and build
+    name: Test and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -35,8 +35,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Test position change rules
+        run: npm test
+
       - name: Build production bundle
         run: npm run build
+
+      - name: Build monitor worker
+        run: npm run build:worker
 
   deploy:
     name: Deploy to Railway
@@ -54,7 +60,8 @@ jobs:
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
       RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
-      RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
+      RAILWAY_WEB_SERVICE_ID: ${{ vars.RAILWAY_WEB_SERVICE_ID }}
+      RAILWAY_WORKER_SERVICE_ID: ${{ vars.RAILWAY_WORKER_SERVICE_ID }}
     steps:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -70,7 +77,7 @@ jobs:
       - name: Validate Railway settings
         shell: bash
         run: |
-          for name in RAILWAY_TOKEN RAILWAY_PROJECT_ID RAILWAY_ENVIRONMENT_ID RAILWAY_SERVICE_ID; do
+          for name in RAILWAY_TOKEN RAILWAY_PROJECT_ID RAILWAY_ENVIRONMENT_ID RAILWAY_WEB_SERVICE_ID RAILWAY_WORKER_SERVICE_ID; do
             if [ -z "${!name}" ]; then
               echo "::error title=Missing Railway setting::$name is not configured in the production environment."
               exit 1
@@ -80,10 +87,18 @@ jobs:
       - name: Install Railway CLI
         run: npm install --global @railway/cli@5.30.4
 
-      - name: Deploy and wait for health check
+      - name: Deploy web service and wait for health check
         run: >-
           railway up
           --project "$RAILWAY_PROJECT_ID"
           --environment "$RAILWAY_ENVIRONMENT_ID"
-          --service "$RAILWAY_SERVICE_ID"
-          --message "$GITHUB_SHA"
+          --service "$RAILWAY_WEB_SERVICE_ID"
+          --message "$GITHUB_SHA web"
+
+      - name: Deploy monitor worker
+        run: >-
+          railway up
+          --project "$RAILWAY_PROJECT_ID"
+          --environment "$RAILWAY_ENVIRONMENT_ID"
+          --service "$RAILWAY_WORKER_SERVICE_ID"
+          --message "$GITHUB_SHA worker"

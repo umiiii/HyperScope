@@ -1,0 +1,106 @@
+.card {
+  width: 100%;
+  min-height: 76px;
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.card:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.icon,
+.iconOn {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: var(--muted);
+  background: var(--surface-raised);
+}
+
+.iconOn {
+  color: var(--ink);
+  background: var(--accent);
+}
+
+.copy {
+  min-width: 0;
+}
+
+.copy strong,
+.copy small {
+  display: block;
+}
+
+.copy strong {
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.copy small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.switch,
+.switchOn {
+  width: 42px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 999px;
+  background: #323944;
+  transition: background 160ms ease;
+}
+
+.switch span,
+.switchOn span {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #929aa6;
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+.switchOn {
+  background: rgba(199, 255, 74, 0.25);
+}
+
+.switchOn span {
+  background: var(--accent);
+  transform: translateX(18px);
+}
+
+.chevron {
+  color: var(--muted);
+}
+
+.card:has(.chevron) .switch,
+.card:has(.chevron) .switchOn {
+  display: none;
+}
+
+.spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

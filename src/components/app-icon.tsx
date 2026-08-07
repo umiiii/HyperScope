@@ -16,7 +16,7 @@ export function AppIcon({ size }: AppIconProps) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#111714",
+        background: "#0c0f13",
       }}
     >
       <div
@@ -26,7 +26,7 @@ export function AppIcon({ size }: AppIconProps) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          border: `${border}px solid #f3f1e9`,
+          border: `${border}px solid #f3f6f1`,
           borderRadius: "999px",
         }}
       >
@@ -37,7 +37,7 @@ export function AppIcon({ size }: AppIconProps) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            border: `${Math.max(4, Math.round(border * 0.65))}px solid #f1522d`,
+            border: `${Math.max(4, Math.round(border * 0.65))}px solid #c7ff4a`,
             borderRadius: "999px",
           }}
         >
@@ -45,7 +45,7 @@ export function AppIcon({ size }: AppIconProps) {
             style={{
               width: dot,
               height: dot,
-              background: "#f1522d",
+              background: "#c7ff4a",
               borderRadius: "999px",
             }}
           />

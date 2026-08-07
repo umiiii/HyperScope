@@ -3,16 +3,16 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "HyperScope Push Lab",
+    name: "HyperScope · Hyperliquid 仓位监视",
     short_name: "HyperScope",
-    description: "在 iPhone 与现代浏览器上验证 Web Push 的最小 PWA。",
+    description: "每分钟监视 Hyperliquid 永续仓位，并在仓位变化时发送设备通知。",
     start_url: "/",
     scope: "/",
     display: "standalone",
     orientation: "portrait-primary",
-    background_color: "#f3f1e9",
-    theme_color: "#f3f1e9",
-    categories: ["utilities", "developer"],
+    background_color: "#0c0f13",
+    theme_color: "#0c0f13",
+    categories: ["finance", "utilities"],
     icons: [
       {
         src: "/icons/icon-192",

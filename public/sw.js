@@ -12,7 +12,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("push", (event) => {
   let data = {
     title: APP_NAME,
-    body: "你有一条新通知。",
+    body: "你有一条新的仓位通知。",
     icon: "/icons/icon-192",
     badge: "/icons/icon-192",
     url: DEFAULT_URL,
@@ -33,10 +33,10 @@ self.addEventListener("push", (event) => {
 
   event.waitUntil(
     self.registration.showNotification(data.title || APP_NAME, {
-      body: data.body || "你有一条新通知。",
+      body: data.body || "你有一条新的仓位通知。",
       icon: data.icon || "/icons/icon-192",
       badge: data.badge || "/icons/icon-192",
-      tag: "hyperscope-push-test",
+      tag: data.tag || "hyperscope-position-change",
       renotify: true,
       data: { url: targetUrl.pathname + targetUrl.search + targetUrl.hash },
     }),
