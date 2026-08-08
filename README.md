@@ -16,10 +16,12 @@ HyperScope 是一个移动优先的 Hyperliquid 仓位监视 PWA。添加公开�
 - PostgreSQL：持久化地址、仓位快照、变化记录、设备订阅和推送 outbox。
 - Railway Web Service：运行 Next.js standalone 服务。
 - Railway Worker Service：常驻进程，每 60 秒扫描到期地址并发送通知。
-- Hyperliquid Info API：读取主永续 DEX 的 `clearinghouseState`。
+- Hyperliquid Info API：缓存 `perpDexs` 目录，并读取主永续 DEX 与全部 HIP-3 builder DEX 的 `clearinghouseState`。
 - Service Worker + VAPID：即使 PWA 页面关闭，仍可显示系统通知。
 
 第一次读取只建立基线，不发送通知。监视失败时会保留旧快照，避免把临时网络错误误报成全部平仓。盈亏、仓位价值、清算价等随行情变化的字段只用于展示，不会单独触发通知。
+
+每个 DEX 都保存独立的快照时间。系统首次发现新的 builder DEX 时只为该 DEX 建立基线，不会把原有仓位误报为刚开仓；后续才正常检测变化。页面中的“DEX 账户价值”是各永续 DEX 返回值的汇总，不包含现货余额。
 
 ## 本地运行
 
@@ -64,7 +66,7 @@ VAPID_SUBJECT=mailto:you@example.com
 VAPID_PUBLIC_KEY=<生成的公钥>
 VAPID_PRIVATE_KEY=<生成的私钥>
 MONITOR_INTERVAL_MS=60000
-MAX_MONITORED_ADDRESSES=50
+MAX_MONITORED_ADDRESSES=40
 ```
 
 `${{Postgres.DATABASE_URL}}` 是 Railway 私网引用，`Postgres` 必须与数据库服务名一致。`PUSH_ADMIN_TOKEN` 已不再使用：推送由仓位变化自动触发，而不是开放一个手工发送接口。
@@ -89,6 +91,8 @@ VAPID 公钥和私钥必须来自同一次生成并长期保持不变；更换�
 
 如果使用这条 GitHub Actions 流水线，请关闭两个 Railway Service 自带的 GitHub Autodeploy，避免同一提交重复部署。只有提交真正进入 `main` 后才会自动部署；本地未提交或未推送的改动不会影响线上。
 
+从只监视主 DEX 的旧版本首次升级到 HIP-3 版本时，应先停止旧 Worker，再部署 Web 和新 Worker。旧 Worker 会按地址整体替换仓位，不能与已写入 HIP-3 数据的新版本重叠运行；如需回滚，也应先停止 Worker，不能直接恢复旧 Worker。
+
 ## API
 
 - `GET /api/health`：数据库与网页健康检查。
@@ -100,10 +104,10 @@ VAPID 公钥和私钥必须来自同一次生成并长期保持不变；更换�
 
 ## MVP 边界
 
-- 只读取 Hyperliquid 主永续 DEX（请求中的 `dex` 为空）；HIP-3 builder DEX 尚未纳入。
+- 读取主永续 DEX 和 `perpDexs` 当前列出的 HIP-3 builder DEX；DEX 目录缓存 10 分钟，已监视过的 DEX 即使暂时未出现在目录中也会继续读取。
 - 每分钟比较快照，因此一次轮询间隔内发生又完全恢复的短暂仓位变化可能无法捕获。
 - 没有账户系统；所有访问者共享同一观察列表和推送事件，适合单人私用部署，不适合公开多租户服务。
-- 地址数量默认限制为 50。Hyperliquid 请求失败不会覆盖上一份成功快照。
+- 地址数量默认限制为 40，以便在当前 10 个永续 DEX 下为 Hyperliquid 的 IP 级限流保留余量。请求按每秒最多 8 次启动、并发最多 8 次；任一 DEX 请求失败都不会覆盖上一份成功快照。
 
 ## 发布前校验
 

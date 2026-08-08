@@ -1,5 +1,8 @@
 import { Pool, type PoolClient } from "pg";
-import { SCHEMA_STATEMENTS } from "@/lib/db/schema";
+import {
+  ADDITIVE_SCHEMA_MIGRATIONS,
+  SCHEMA_STATEMENTS,
+} from "@/lib/db/schema";
 
 export class DatabaseConfigurationError extends Error {
   constructor(message = "尚未配置 DATABASE_URL。") {
@@ -44,6 +47,24 @@ export async function ensureSchema() {
         await client.query("SELECT pg_advisory_xact_lock(84519320)");
         for (const statement of SCHEMA_STATEMENTS) {
           await client.query(statement);
+        }
+        for (const statement of ADDITIVE_SCHEMA_MIGRATIONS) {
+          await client.query(statement);
+        }
+
+        const migration = await client.query(
+          `
+            INSERT INTO schema_migrations (id)
+            VALUES ('positions-primary-key-v2')
+            ON CONFLICT (id) DO NOTHING
+            RETURNING id
+          `,
+        );
+        if ((migration.rowCount ?? 0) > 0) {
+          await client.query("ALTER TABLE positions DROP CONSTRAINT IF EXISTS positions_pkey");
+          await client.query(
+            "ALTER TABLE positions ADD CONSTRAINT positions_pkey PRIMARY KEY (address_id, dex, coin)",
+          );
         }
         await client.query("COMMIT");
       } catch (error) {

@@ -49,9 +49,17 @@ function eventMeta(kind: PositionEvent["kind"]) {
       return { label: "杠杆", tone: "warning", icon: Gauge };
     case "entry_price_changed":
       return { label: "均价", tone: "warning", icon: Zap };
+    case "monitor_scope_updated":
+      return { label: "扩展", tone: "neutral", icon: Check };
     default:
       return { label: "开始", tone: "neutral", icon: Check };
   }
+}
+
+function displayCoin(dex: string | null, coin: string) {
+  if (!dex) return coin;
+  const prefix = `${dex}:`;
+  return coin.startsWith(prefix) ? coin.slice(prefix.length) : coin;
 }
 
 function markPrice(position: PositionSnapshot) {
@@ -173,12 +181,12 @@ export function AddressDetailView({ id }: AddressDetailViewProps) {
 
           <section className={styles.accountCard}>
             <div className={styles.accountValue}>
-              <span>账户价值</span>
+              <span>永续 DEX 账户价值</span>
               <strong>{formatUsd(detail.accountValue)}</strong>
-              <small>{formatRelativeTime(detail.lastCheckedAt)}更新</small>
+              <small>各永续 DEX 汇总 · {formatRelativeTime(detail.lastCheckedAt)}更新</small>
             </div>
             <div className={styles.accountGrid}>
-              <div><span>可提取</span><strong>{formatUsd(detail.withdrawable, true)}</strong></div>
+              <div><span>DEX 可提取</span><strong>{formatUsd(detail.withdrawable, true)}</strong></div>
               <div><span>保证金占用</span><strong>{formatUsd(detail.totalMarginUsed, true)}</strong></div>
               <div>
                 <span>未实现盈亏</span>
@@ -212,10 +220,11 @@ export function AddressDetailView({ id }: AddressDetailViewProps) {
                   const isLong = Number(position.size) > 0;
                   const pnl = Number(position.unrealizedPnl);
                   return (
-                    <article key={position.coin} className={styles.positionCard}>
+                    <article key={`${position.dex}:${position.coin}`} className={styles.positionCard}>
                       <div className={styles.positionTop}>
                         <div>
-                          <strong>{position.coin}</strong>
+                          <strong>{displayCoin(position.dex, position.coin)}</strong>
+                          <span className={styles.dexBadge}>{position.dex ? position.dex.toUpperCase() : "MAIN"}</span>
                           <span className={isLong ? styles.longBadge : styles.shortBadge}>{isLong ? "LONG" : "SHORT"}</span>
                         </div>
                         <div className={styles.pnl}>
@@ -241,7 +250,7 @@ export function AddressDetailView({ id }: AddressDetailViewProps) {
           <section className={styles.section}>
             <div className={styles.sectionHeading}>
               <div><span>CHANGE LOG</span><h2>仓位变动</h2></div>
-              <strong>{detail.events.filter((event) => event.kind !== "monitor_started").length}</strong>
+              <strong>{detail.events.filter((event) => !["monitor_started", "monitor_scope_updated"].includes(event.kind)).length}</strong>
             </div>
             <div className={styles.timeline}>
               {detail.events.map((event) => {
@@ -252,7 +261,8 @@ export function AddressDetailView({ id }: AddressDetailViewProps) {
                     <span className={`${styles.eventIcon} ${styles[meta.tone]}`}><Icon size={15} aria-hidden="true" /></span>
                     <div>
                       <div className={styles.eventTitle}>
-                        <strong>{event.coin || "HyperScope"}</strong>
+                        <strong>{event.coin ? displayCoin(event.dex, event.coin) : "HyperScope"}</strong>
+                        {event.dex && <span>{event.dex.toUpperCase()}</span>}
                         <span>{meta.label}</span>
                       </div>
                       <p>{event.summary}</p>

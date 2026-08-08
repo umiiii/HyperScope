@@ -5,6 +5,7 @@ import type { PositionSnapshot } from "@/lib/hyperliquid/types";
 
 function position(overrides: Partial<PositionSnapshot> = {}): PositionSnapshot {
   return {
+    dex: "",
     coin: "BTC",
     size: "1.0",
     entryPrice: "100000.0",
@@ -83,4 +84,20 @@ test("极高精度的仓位数量仍按精确小数判断加减仓", () => {
     )[0]?.kind,
     "increased",
   );
+});
+
+test("同名币在不同 DEX 中独立比较", () => {
+  const changes = detectPositionChanges(
+    [position({ dex: "", coin: "ETH" })],
+    [position({ dex: "xyz", coin: "ETH" })],
+  );
+
+  assert.deepEqual(
+    changes.map((change) => [change.dex, change.kind]),
+    [
+      ["", "closed"],
+      ["xyz", "opened"],
+    ],
+  );
+  assert.match(changes[1]?.summary ?? "", /XYZ/);
 });

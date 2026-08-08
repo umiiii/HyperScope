@@ -26,6 +26,7 @@ type AddressRow = {
 };
 
 type PositionRow = {
+  dex: string;
   coin: string;
   size: string;
   entry_price: string | null;
@@ -42,6 +43,7 @@ type PositionRow = {
 
 type EventRow = {
   id: string;
+  dex: string | null;
   coin: string | null;
   kind: PositionEvent["kind"];
   summary: string;
@@ -82,6 +84,7 @@ function mapAddress(row: AddressRow): AddressSummary {
 
 function mapPosition(row: PositionRow): PositionSnapshot {
   return {
+    dex: row.dex,
     coin: row.coin,
     size: row.size,
     entryPrice: row.entry_price,
@@ -94,6 +97,14 @@ function mapPosition(row: PositionRow): PositionSnapshot {
     leverageValue: row.leverage_value,
     leverageRawUsd: row.leverage_raw_usd,
     maxLeverage: row.max_leverage,
+  };
+}
+
+function normalizeHistoricalPosition(position: PositionSnapshot | null) {
+  if (!position) return null;
+  return {
+    ...position,
+    dex: typeof position.dex === "string" ? position.dex : "",
   };
 }
 
@@ -181,18 +192,18 @@ export async function getAddressDetail(id: string): Promise<AddressDetail | null
     ),
     pool.query<PositionRow>(
       `
-        SELECT coin, size, entry_price, position_value, unrealized_pnl,
+        SELECT dex, coin, size, entry_price, position_value, unrealized_pnl,
           return_on_equity, liquidation_price, margin_used, leverage_type,
           leverage_value, leverage_raw_usd, max_leverage
         FROM positions
         WHERE address_id = $1
-        ORDER BY ABS(position_value::numeric) DESC, coin ASC
+        ORDER BY dex ASC, ABS(position_value::numeric) DESC, coin ASC
       `,
       [id],
     ),
     pool.query<EventRow>(
       `
-        SELECT id, coin, kind, summary, before_position, after_position, detected_at
+        SELECT id, dex, coin, kind, summary, before_position, after_position, detected_at
         FROM position_changes
         WHERE address_id = $1
         ORDER BY detected_at DESC
@@ -210,11 +221,12 @@ export async function getAddressDetail(id: string): Promise<AddressDetail | null
     positions: positionResult.rows.map(mapPosition),
     events: eventResult.rows.map((row) => ({
       id: row.id,
+      dex: row.dex,
       coin: row.coin,
       kind: row.kind,
       summary: row.summary,
-      before: row.before_position,
-      after: row.after_position,
+      before: normalizeHistoricalPosition(row.before_position),
+      after: normalizeHistoricalPosition(row.after_position),
       detectedAt: row.detected_at.toISOString(),
     })),
   };
@@ -232,10 +244,10 @@ export async function findAddressId(address: string) {
 export async function createMonitoredAddress(address: string, label: string | null) {
   const normalizedAddress = address.toLowerCase();
   const id = randomUUID();
-  const configuredMax = Number(process.env.MAX_MONITORED_ADDRESSES || 50);
+  const configuredMax = Number(process.env.MAX_MONITORED_ADDRESSES || 40);
   const maxAddresses = Number.isFinite(configuredMax)
     ? Math.max(1, Math.floor(configuredMax))
-    : 50;
+    : 40;
 
   await withTransaction(async (client) => {
     await client.query("SELECT pg_advisory_xact_lock(84519321)");

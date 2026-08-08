@@ -23,8 +23,9 @@ export type AddressSummary = {
 
 export type PositionEvent = {
   id: string;
+  dex: string | null;
   coin: string | null;
-  kind: PositionChangeKind | "monitor_started";
+  kind: PositionChangeKind | "monitor_started" | "monitor_scope_updated";
   summary: string;
   before: PositionSnapshot | null;
   after: PositionSnapshot | null;

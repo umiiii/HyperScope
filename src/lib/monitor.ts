@@ -24,6 +24,7 @@ type MonitorAddressRow = {
 };
 
 type StoredPositionRow = {
+  dex: string;
   coin: string;
   size: string;
   entry_price: string | null;
@@ -38,6 +39,11 @@ type StoredPositionRow = {
   max_leverage: number | null;
 };
 
+type DexStateRow = {
+  dex: string;
+  last_snapshot_at: Date;
+};
+
 export type MonitorResult = {
   success: boolean;
   initialSnapshot: boolean;
@@ -47,6 +53,7 @@ export type MonitorResult = {
 
 function mapStoredPosition(row: StoredPositionRow): PositionSnapshot {
   return {
+    dex: row.dex,
     coin: row.coin,
     size: row.size,
     entryPrice: row.entry_price,
@@ -64,14 +71,15 @@ function mapStoredPosition(row: StoredPositionRow): PositionSnapshot {
 
 function fingerprint(
   addressId: string,
-  previousCheckedAt: Date | null,
+  previousSnapshotAt: Date | null,
   change: PositionChange,
 ) {
   return createHash("sha256")
     .update(
       JSON.stringify({
         addressId,
-        previousCheckedAt: previousCheckedAt?.toISOString() ?? "initial",
+        previousSnapshotAt: previousSnapshotAt?.toISOString() ?? "initial",
+        dex: change.dex,
         coin: change.coin,
         kind: change.kind,
         before: change.before,
@@ -94,7 +102,7 @@ function errorMessage(error: unknown) {
 async function loadStoredPositions(client: PoolClient, addressId: string) {
   const result = await client.query<StoredPositionRow>(
     `
-      SELECT coin, size, entry_price, position_value, unrealized_pnl,
+      SELECT dex, coin, size, entry_price, position_value, unrealized_pnl,
         return_on_equity, liquidation_price, margin_used, leverage_type,
         leverage_value, leverage_raw_usd, max_leverage
       FROM positions
@@ -105,24 +113,29 @@ async function loadStoredPositions(client: PoolClient, addressId: string) {
   return result.rows.map(mapStoredPosition);
 }
 
-async function replacePositions(
+async function replaceDexPositions(
   client: PoolClient,
   addressId: string,
+  dex: string,
   positions: PositionSnapshot[],
 ) {
-  await client.query("DELETE FROM positions WHERE address_id = $1", [addressId]);
+  await client.query(
+    "DELETE FROM positions WHERE address_id = $1 AND dex = $2",
+    [addressId, dex],
+  );
   for (const position of positions) {
     await client.query(
       `
         INSERT INTO positions (
-          address_id, coin, size, entry_price, position_value, unrealized_pnl,
+          address_id, dex, coin, size, entry_price, position_value, unrealized_pnl,
           return_on_equity, liquidation_price, margin_used, leverage_type,
           leverage_value, leverage_raw_usd, max_leverage, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
       `,
       [
         addressId,
+        dex,
         position.coin,
         position.size,
         position.entryPrice,
@@ -144,7 +157,8 @@ async function recordChanges(
   client: PoolClient,
   address: MonitorAddressRow,
   changes: PositionChange[],
-  detectedAt: Date,
+  snapshotTimes: Record<string, number>,
+  previousSnapshotTimes: Map<string, Date>,
 ) {
   const batchId = randomUUID();
   const accepted: PositionChange[] = [];
@@ -153,23 +167,28 @@ async function recordChanges(
     const result = await client.query(
       `
         INSERT INTO position_changes (
-          id, address_id, batch_id, coin, kind, summary, before_position,
+          id, address_id, batch_id, dex, coin, kind, summary, before_position,
           after_position, fingerprint, detected_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11)
         ON CONFLICT (fingerprint) DO NOTHING
       `,
       [
         randomUUID(),
         address.id,
         batchId,
+        change.dex,
         change.coin,
         change.kind,
         change.summary,
         change.before ? JSON.stringify(change.before) : null,
         change.after ? JSON.stringify(change.after) : null,
-        fingerprint(address.id, address.last_checked_at, change),
-        detectedAt,
+        fingerprint(
+          address.id,
+          previousSnapshotTimes.get(change.dex) ?? null,
+          change,
+        ),
+        new Date(snapshotTimes[change.dex]),
       ],
     );
     if ((result.rowCount ?? 0) > 0) accepted.push(change);
@@ -205,20 +224,29 @@ async function recordChanges(
 export async function monitorAddress(addressId: string): Promise<MonitorResult> {
   await ensureSchema();
   const pool = getDatabasePool();
-  const addressResult = await pool.query<MonitorAddressRow>(
-    `
-      SELECT id, address, label, active, last_checked_at
-      FROM monitored_addresses
-      WHERE id = $1 AND active = TRUE
-    `,
-    [addressId],
-  );
+  const [addressResult, knownDexResult] = await Promise.all([
+    pool.query<MonitorAddressRow>(
+      `
+        SELECT id, address, label, active, last_checked_at
+        FROM monitored_addresses
+        WHERE id = $1 AND active = TRUE
+      `,
+      [addressId],
+    ),
+    pool.query<{ dex: string }>(
+      "SELECT dex FROM monitored_address_dex_states WHERE address_id = $1",
+      [addressId],
+    ),
+  ]);
   const address = addressResult.rows[0];
   if (!address) throw new Error("监视地址不存在。");
 
   let snapshot;
   try {
-    snapshot = await fetchHyperliquidAccount(address.address);
+    snapshot = await fetchHyperliquidAccount(
+      address.address,
+      knownDexResult.rows.map((row) => row.dex),
+    );
   } catch (error) {
     const message = errorMessage(error);
     const nextCheckAt = new Date(Date.now() + getMonitorIntervalMs());
@@ -259,23 +287,83 @@ export async function monitorAddress(addressId: string): Promise<MonitorResult> 
     if (!lockedAddress) {
       return { success: false, initialSnapshot: false, changes: [], error: "地址已停止监视。" };
     }
-    if (
-      lockedAddress.last_checked_at &&
-      lockedAddress.last_checked_at >= snapshot.fetchedAt
-    ) {
+    const dexStateResult = await client.query<DexStateRow>(
+      `
+        SELECT dex, last_snapshot_at
+        FROM monitored_address_dex_states
+        WHERE address_id = $1
+        FOR UPDATE
+      `,
+      [addressId],
+    );
+    const previousSnapshotTimes = new Map(
+      dexStateResult.rows.map((row) => [row.dex, row.last_snapshot_at]),
+    );
+    const candidateTimes = Object.entries(snapshot.dexSnapshotTimes);
+    const candidateDexes = new Set(candidateTimes.map(([dex]) => dex));
+    const missesKnownDex = [...previousSnapshotTimes.keys()].some(
+      (dex) => !candidateDexes.has(dex),
+    );
+    if (missesKnownDex) {
+      return { success: true, initialSnapshot: false, changes: [] };
+    }
+    const containsOlderSnapshot = candidateTimes.some(([dex, time]) => {
+      const previousTime = previousSnapshotTimes.get(dex);
+      return previousTime ? time < previousTime.getTime() : false;
+    });
+    if (containsOlderSnapshot) {
+      return { success: true, initialSnapshot: false, changes: [] };
+    }
+    const hasFreshSnapshot = candidateTimes.some(([dex, time]) => {
+      const previousTime = previousSnapshotTimes.get(dex);
+      return !previousTime || time > previousTime.getTime();
+    });
+    if (!hasFreshSnapshot) {
       return { success: true, initialSnapshot: false, changes: [] };
     }
 
     const previousPositions = await loadStoredPositions(client, addressId);
-    const initialSnapshot = lockedAddress.last_checked_at === null;
-    const changes = initialSnapshot
-      ? []
-      : detectPositionChanges(previousPositions, snapshot.positions);
-    const acceptedChanges = initialSnapshot
-      ? []
-      : await recordChanges(client, lockedAddress, changes, snapshot.fetchedAt);
+    const initialSnapshot = previousSnapshotTimes.size === 0;
+    const newDexes: string[] = [];
+    const changes: PositionChange[] = [];
 
-    await replacePositions(client, addressId, snapshot.positions);
+    for (const [dex, time] of candidateTimes) {
+      const previousTime = previousSnapshotTimes.get(dex);
+      if (previousTime && time <= previousTime.getTime()) continue;
+
+      const currentDexPositions = snapshot.positions.filter(
+        (position) => position.dex === dex,
+      );
+      if (!previousTime) {
+        newDexes.push(dex);
+      } else {
+        changes.push(
+          ...detectPositionChanges(
+            previousPositions.filter((position) => position.dex === dex),
+            currentDexPositions,
+          ),
+        );
+      }
+
+      await replaceDexPositions(client, addressId, dex, currentDexPositions);
+      await client.query(
+        `
+          INSERT INTO monitored_address_dex_states (address_id, dex, last_snapshot_at)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (address_id, dex) DO UPDATE
+          SET last_snapshot_at = EXCLUDED.last_snapshot_at
+        `,
+        [addressId, dex, new Date(time)],
+      );
+    }
+
+    const acceptedChanges = await recordChanges(
+      client,
+      lockedAddress,
+      changes,
+      snapshot.dexSnapshotTimes,
+      previousSnapshotTimes,
+    );
 
     if (initialSnapshot) {
       await client.query(
@@ -293,6 +381,28 @@ export async function monitorAddress(addressId: string): Promise<MonitorResult> 
           randomUUID(),
           `开始监视 · 当前 ${snapshot.positions.length} 个永续仓位`,
           createHash("sha256").update(`monitor-started:${addressId}`).digest("hex"),
+          snapshot.fetchedAt,
+        ],
+      );
+    } else if (newDexes.length > 0) {
+      const dexLabels = newDexes.map((dex) => dex || "main").join("、");
+      await client.query(
+        `
+          INSERT INTO position_changes (
+            id, address_id, batch_id, dex, coin, kind, summary, before_position,
+            after_position, fingerprint, detected_at
+          )
+          VALUES ($1, $2, $3, NULL, NULL, 'monitor_scope_updated', $4, NULL, NULL, $5, $6)
+          ON CONFLICT (fingerprint) DO NOTHING
+        `,
+        [
+          randomUUID(),
+          addressId,
+          randomUUID(),
+          `已纳入 ${dexLabels} DEX · 新 DEX 当前 ${snapshot.positions.filter((position) => newDexes.includes(position.dex)).length} 个仓位`,
+          createHash("sha256")
+            .update(`monitor-scope:${addressId}:${newDexes.sort().join(",")}`)
+            .digest("hex"),
           snapshot.fetchedAt,
         ],
       );

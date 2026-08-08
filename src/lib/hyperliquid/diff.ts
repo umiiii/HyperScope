@@ -59,37 +59,54 @@ function absoluteSize(size: string) {
   return visibleFraction ? `${groupedInteger}.${visibleFraction}` : groupedInteger;
 }
 
+function positionKey(position: PositionSnapshot) {
+  return `${position.dex}\u0000${position.coin}`;
+}
+
+function displayPosition(dex: string, coin: string) {
+  if (!dex) return coin;
+  const prefix = `${dex}:`;
+  const symbol = coin.startsWith(prefix) ? coin.slice(prefix.length) : coin;
+  return `${dex.toUpperCase()} · ${symbol}`;
+}
+
 export function detectPositionChanges(
   previous: PositionSnapshot[],
   current: PositionSnapshot[],
 ): PositionChange[] {
-  const previousByCoin = new Map(previous.map((position) => [position.coin, position]));
-  const currentByCoin = new Map(current.map((position) => [position.coin, position]));
-  const coins = [...new Set([...previousByCoin.keys(), ...currentByCoin.keys()])].sort();
+  const previousByKey = new Map(previous.map((position) => [positionKey(position), position]));
+  const currentByKey = new Map(current.map((position) => [positionKey(position), position]));
+  const keys = [...new Set([...previousByKey.keys(), ...currentByKey.keys()])].sort();
   const changes: PositionChange[] = [];
 
-  for (const coin of coins) {
-    const before = previousByCoin.get(coin) ?? null;
-    const after = currentByCoin.get(coin) ?? null;
+  for (const key of keys) {
+    const before = previousByKey.get(key) ?? null;
+    const after = currentByKey.get(key) ?? null;
+    const position = after ?? before;
+    if (!position) continue;
+    const { dex, coin } = position;
+    const label = displayPosition(dex, coin);
 
     if (!before && after) {
       changes.push({
+        dex,
         coin,
         kind: "opened",
         before: null,
         after,
-        summary: `${coin} 开仓 · ${direction(after.size)} ${absoluteSize(after.size)}`,
+        summary: `${label} 开仓 · ${direction(after.size)} ${absoluteSize(after.size)}`,
       });
       continue;
     }
 
     if (before && !after) {
       changes.push({
+        dex,
         coin,
         kind: "closed",
         before,
         after: null,
-        summary: `${coin} 平仓 · 原${direction(before.size)} ${absoluteSize(before.size)}`,
+        summary: `${label} 平仓 · 原${direction(before.size)} ${absoluteSize(before.size)}`,
       });
       continue;
     }
@@ -100,11 +117,12 @@ export function detectPositionChanges(
 
     if (sizeChanged && decimalSign(before.size) !== decimalSign(after.size)) {
       changes.push({
+        dex,
         coin,
         kind: "flipped",
         before,
         after,
-        summary: `${coin} 反向 · ${direction(before.size)} → ${direction(after.size)}`,
+        summary: `${label} 反向 · ${direction(before.size)} → ${direction(after.size)}`,
       });
       continue;
     }
@@ -112,11 +130,12 @@ export function detectPositionChanges(
     if (sizeChanged) {
       const increased = compareAbsoluteDecimals(after.size, before.size) > 0;
       changes.push({
+        dex,
         coin,
         kind: increased ? "increased" : "reduced",
         before,
         after,
-        summary: `${coin} ${increased ? "加仓" : "减仓"} · ${absoluteSize(before.size)} → ${absoluteSize(after.size)}`,
+        summary: `${label} ${increased ? "加仓" : "减仓"} · ${absoluteSize(before.size)} → ${absoluteSize(after.size)}`,
       });
       continue;
     }
@@ -127,22 +146,24 @@ export function detectPositionChanges(
 
     if (leverageChanged) {
       changes.push({
+        dex,
         coin,
         kind: "leverage_changed",
         before,
         after,
-        summary: `${coin} 杠杆调整 · ${before.leverageValue}x → ${after.leverageValue}x`,
+        summary: `${label} 杠杆调整 · ${before.leverageValue}x → ${after.leverageValue}x`,
       });
       continue;
     }
 
     if (!decimalEquals(before.entryPrice, after.entryPrice)) {
       changes.push({
+        dex,
         coin,
         kind: "entry_price_changed",
         before,
         after,
-        summary: `${coin} 入场价更新 · ${before.entryPrice ?? "—"} → ${after.entryPrice ?? "—"}`,
+        summary: `${label} 入场价更新 · ${before.entryPrice ?? "—"} → ${after.entryPrice ?? "—"}`,
       });
     }
   }

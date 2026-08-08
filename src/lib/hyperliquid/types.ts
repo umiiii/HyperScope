@@ -1,4 +1,5 @@
 export type PositionSnapshot = {
+  dex: string;
   coin: string;
   size: string;
   entryPrice: string | null;
@@ -19,6 +20,7 @@ export type AccountSnapshot = {
   totalMarginUsed: string;
   positions: PositionSnapshot[];
   fetchedAt: Date;
+  dexSnapshotTimes: Record<string, number>;
 };
 
 export type PositionChangeKind =
@@ -31,6 +33,7 @@ export type PositionChangeKind =
   | "entry_price_changed";
 
 export type PositionChange = {
+  dex: string;
   coin: string;
   kind: PositionChangeKind;
   before: PositionSnapshot | null;

@@ -24,6 +24,7 @@ export const SCHEMA_STATEMENTS = [
   `
     CREATE TABLE IF NOT EXISTS positions (
       address_id TEXT NOT NULL REFERENCES monitored_addresses(id) ON DELETE CASCADE,
+      dex TEXT NOT NULL DEFAULT '',
       coin TEXT NOT NULL,
       size TEXT NOT NULL,
       entry_price TEXT,
@@ -37,7 +38,15 @@ export const SCHEMA_STATEMENTS = [
       leverage_raw_usd TEXT,
       max_leverage INTEGER,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (address_id, coin)
+      PRIMARY KEY (address_id, dex, coin)
+    )
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS monitored_address_dex_states (
+      address_id TEXT NOT NULL REFERENCES monitored_addresses(id) ON DELETE CASCADE,
+      dex TEXT NOT NULL,
+      last_snapshot_at TIMESTAMPTZ NOT NULL,
+      PRIMARY KEY (address_id, dex)
     )
   `,
   `
@@ -45,6 +54,7 @@ export const SCHEMA_STATEMENTS = [
       id TEXT PRIMARY KEY,
       address_id TEXT NOT NULL REFERENCES monitored_addresses(id) ON DELETE CASCADE,
       batch_id TEXT NOT NULL,
+      dex TEXT,
       coin TEXT,
       kind TEXT NOT NULL,
       summary TEXT NOT NULL,
@@ -52,6 +62,12 @@ export const SCHEMA_STATEMENTS = [
       after_position JSONB,
       fingerprint TEXT NOT NULL UNIQUE,
       detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `,
   `
@@ -102,5 +118,27 @@ export const SCHEMA_STATEMENTS = [
       last_error TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `,
+] as const;
+
+export const ADDITIVE_SCHEMA_MIGRATIONS = [
+  "ALTER TABLE positions ADD COLUMN IF NOT EXISTS dex TEXT NOT NULL DEFAULT ''",
+  "UPDATE positions SET dex = '' WHERE dex IS NULL",
+  "ALTER TABLE positions ALTER COLUMN dex SET DEFAULT ''",
+  "ALTER TABLE positions ALTER COLUMN dex SET NOT NULL",
+  "ALTER TABLE position_changes ADD COLUMN IF NOT EXISTS dex TEXT",
+  `
+    INSERT INTO monitored_address_dex_states (address_id, dex, last_snapshot_at)
+    SELECT id, '', last_checked_at
+    FROM monitored_addresses
+    WHERE last_checked_at IS NOT NULL
+    ON CONFLICT (address_id, dex) DO NOTHING
+  `,
+  `
+    UPDATE position_changes
+    SET dex = ''
+    WHERE dex IS NULL
+      AND coin IS NOT NULL
+      AND kind NOT IN ('monitor_started', 'monitor_scope_updated')
   `,
 ] as const;

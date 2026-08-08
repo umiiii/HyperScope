@@ -173,7 +173,7 @@ export function Dashboard() {
                   <ChevronRight size={18} aria-hidden="true" />
                 </div>
                 <div className={styles.addressMetrics}>
-                  <div><span>账户价值</span><strong>{formatUsd(address.accountValue, true)}</strong></div>
+                  <div><span>DEX 账户价值</span><strong>{formatUsd(address.accountValue, true)}</strong></div>
                   <div><span>仓位</span><strong>{address.positionCount}</strong></div>
                   <div>
                     <span>未实现盈亏</span>

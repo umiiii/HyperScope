@@ -178,11 +178,13 @@
   border-bottom: 1px solid var(--line);
 }
 
-.positionTop > div:first-child { display: flex; align-items: center; gap: 9px; }
+.positionTop > div:first-child { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
 .positionTop > div:first-child > strong { color: var(--text); font-size: 18px; }
 .longBadge,
-.shortBadge { padding: 4px 6px; color: var(--positive); border-radius: 6px; background: rgba(77, 230, 168, 0.09); font-family: var(--font-mono); font-size: 8px; }
+.shortBadge,
+.dexBadge { padding: 4px 6px; color: var(--positive); border-radius: 6px; background: rgba(77, 230, 168, 0.09); font-family: var(--font-mono); font-size: 8px; }
 .shortBadge { color: var(--negative); background: rgba(255, 107, 107, 0.09); }
+.dexBadge { color: var(--muted-strong); background: var(--surface-raised); }
 
 .pnl { text-align: right; }
 .pnl span,
