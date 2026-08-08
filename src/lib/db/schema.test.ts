@@ -106,12 +106,25 @@ test("旧版主 DEX schema 会回填水位并迁移为 DEX 复合主键", () => 
       fingerprint TEXT NOT NULL UNIQUE,
       detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE push_subscriptions (
+      endpoint_hash TEXT PRIMARY KEY,
+      endpoint TEXT NOT NULL,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      expiration_time BIGINT,
+      user_agent TEXT,
+      failure_count INTEGER NOT NULL DEFAULT 0,
+      last_success_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 
   for (const statement of SCHEMA_STATEMENTS.filter(
     (statement) =>
       statement.includes("CREATE TABLE IF NOT EXISTS monitored_address_dex_states") ||
-      statement.includes("CREATE TABLE IF NOT EXISTS schema_migrations"),
+      statement.includes("CREATE TABLE IF NOT EXISTS schema_migrations") ||
+      statement.includes("push_test_limits"),
   )) {
     database.public.none(statement);
   }
@@ -149,5 +162,13 @@ test("旧版主 DEX schema 会回填水位并迁移为 DEX 复合主键", () => 
   assert.equal(
     database.public.one("SELECT dex FROM position_changes WHERE id = 'legacy-event'").dex,
     "",
+  );
+  database.public.none(`
+    INSERT INTO push_test_limits (endpoint_hash, last_attempt_at)
+    VALUES ('legacy-test-limit', NOW())
+  `);
+  assert.equal(
+    database.public.one("SELECT COUNT(*)::int AS count FROM push_test_limits").count,
+    1,
   );
 });

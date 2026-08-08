@@ -1,6 +1,13 @@
 "use client";
 
-import { Bell, BellOff, ChevronRight, LoaderCircle, Share } from "lucide-react";
+import {
+  Bell,
+  BellOff,
+  ChevronRight,
+  LoaderCircle,
+  Send,
+  Share,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import styles from "./push-enrollment.module.css";
 
@@ -55,6 +62,7 @@ export function PushEnrollment() {
   const subscriptionRef = useRef<PushSubscription | null>(null);
   const [state, setState] = useState<PushState>("loading");
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState("正在检查这台设备");
 
   useEffect(() => {
@@ -168,6 +176,37 @@ export function PushEnrollment() {
     }
   }
 
+  async function testPush() {
+    const subscription = subscriptionRef.current;
+    if (state !== "on" || !subscription) return;
+
+    setTesting(true);
+    try {
+      await syncSubscription(subscription);
+      const response = await fetch("/api/push/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: subscription.toJSON() }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { message?: string }
+        | null;
+      if (!response.ok) {
+        if (response.status === 410) {
+          await subscription.unsubscribe().catch(() => false);
+          subscriptionRef.current = null;
+          setState("off");
+        }
+        throw new Error(payload?.message || "测试通知发送失败。");
+      }
+      setMessage(payload?.message || "测试通知已提交，请检查系统通知");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "测试通知发送失败");
+    } finally {
+      setTesting(false);
+    }
+  }
+
   const isOn = state === "on";
   const disabled =
     state === "loading" ||
@@ -176,33 +215,52 @@ export function PushEnrollment() {
     state === "error";
 
   return (
-    <button
-      className={styles.card}
-      type="button"
-      role="switch"
-      aria-checked={isOn}
-      onClick={togglePush}
-      disabled={disabled || busy}
-    >
-      <span className={isOn ? styles.iconOn : styles.icon} aria-hidden="true">
-        {busy || state === "loading" ? (
-          <LoaderCircle className={styles.spinner} size={19} />
-        ) : state === "needs-install" ? (
-          <Share size={18} />
-        ) : isOn ? (
-          <Bell size={18} />
-        ) : (
-          <BellOff size={18} />
-        )}
-      </span>
-      <span className={styles.copy}>
-        <strong>{isOn ? "设备通知已开启" : state === "needs-install" ? "安装后开启通知" : "设备通知"}</strong>
-        <small>{message}</small>
-      </span>
-      <span className={isOn ? styles.switchOn : styles.switch} aria-hidden="true">
-        <span />
-      </span>
-      {state === "needs-install" && <ChevronRight className={styles.chevron} size={18} aria-hidden="true" />}
-    </button>
+    <div className={styles.wrapper}>
+      <button
+        className={styles.card}
+        type="button"
+        role="switch"
+        aria-checked={isOn}
+        onClick={togglePush}
+        disabled={disabled || busy || testing}
+      >
+        <span className={isOn ? styles.iconOn : styles.icon} aria-hidden="true">
+          {busy || state === "loading" ? (
+            <LoaderCircle className={styles.spinner} size={19} />
+          ) : state === "needs-install" ? (
+            <Share size={18} />
+          ) : isOn ? (
+            <Bell size={18} />
+          ) : (
+            <BellOff size={18} />
+          )}
+        </span>
+        <span className={styles.copy} aria-live="polite">
+          <strong>{isOn ? "设备通知已开启" : state === "needs-install" ? "安装后开启通知" : "设备通知"}</strong>
+          <small>{message}</small>
+        </span>
+        <span className={isOn ? styles.switchOn : styles.switch} aria-hidden="true">
+          <span />
+        </span>
+        {state === "needs-install" && <ChevronRight className={styles.chevron} size={18} aria-hidden="true" />}
+      </button>
+
+      {isOn && (
+        <button
+          className={styles.testButton}
+          type="button"
+          onClick={testPush}
+          disabled={busy || testing}
+          aria-busy={testing}
+        >
+          {testing ? (
+            <LoaderCircle className={styles.spinner} size={16} aria-hidden="true" />
+          ) : (
+            <Send size={16} aria-hidden="true" />
+          )}
+          {testing ? "正在发送测试通知" : "发送测试通知到这台设备"}
+        </button>
+      )}
+    </div>
   );
 }

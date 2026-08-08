@@ -89,6 +89,17 @@ export const SCHEMA_STATEMENTS = [
     )
   `,
   `
+    CREATE TABLE IF NOT EXISTS push_test_limits (
+      endpoint_hash TEXT PRIMARY KEY,
+      last_attempt_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `,
+  `
+    CREATE INDEX IF NOT EXISTS push_test_limits_attempt_idx
+      ON push_test_limits (last_attempt_at)
+  `,
+  `
     CREATE TABLE IF NOT EXISTS notification_outbox (
       id TEXT PRIMARY KEY,
       address_id TEXT REFERENCES monitored_addresses(id) ON DELETE CASCADE,

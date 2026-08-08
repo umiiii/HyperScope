@@ -6,7 +6,7 @@ HyperScope 是一个移动优先的 Hyperliquid 仓位监视 PWA。添加公开�
 
 ## 三个界面
 
-- `/`：仪表盘，展示正在监视的地址数、worker 状态与各地址概览。
+- `/`：仪表盘，展示正在监视的地址数、worker 状态与各地址概览；设备开启通知后可向当前设备发送测试通知。
 - `/addresses/new`：添加一个主账户或子账户公开地址。
 - `/addresses/[id]`：查看当前仓位、账户摘要和仓位变化记录。
 
@@ -101,6 +101,7 @@ VAPID 公钥和私钥必须来自同一次生成并长期保持不变；更换�
 - `POST /api/addresses/[id]/refresh`：手动读取一次仓位。
 - `GET /api/push/config`：读取运行时 VAPID 公钥。
 - `POST /api/push/subscriptions`、`DELETE /api/push/subscriptions`：保存或移除设备订阅。
+- `POST /api/push/test`：只向请求中的当前已登记设备发送测试通知；完整订阅密钥必须匹配，且每台设备每分钟最多测试一次。
 
 ## MVP 边界
 

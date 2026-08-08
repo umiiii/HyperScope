@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import { ensureSchema, getDatabasePool } from "@/lib/db";
+import {
+  ensureSchema,
+  getDatabasePool,
+  withTransaction,
+} from "@/lib/db";
 
 export type StoredPushSubscription = {
   endpointHash: string;
@@ -18,8 +22,23 @@ export type PushSubscriptionInput = {
   };
 };
 
+export type TestPushClaim =
+  | { status: "claimed"; subscription: StoredPushSubscription }
+  | { status: "cooldown" | "expired" | "missing" | "rate_limited" };
+
 export function endpointHash(endpoint: string) {
   return createHash("sha256").update(endpoint).digest("hex");
+}
+
+function isKnownPushService(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  return (
+    normalized === "web.push.apple.com" ||
+    normalized === "fcm.googleapis.com" ||
+    normalized === "android.googleapis.com" ||
+    normalized === "updates.push.services.mozilla.com" ||
+    normalized.endsWith(".notify.windows.com")
+  );
 }
 
 export function isValidPushSubscription(value: unknown): value is PushSubscriptionInput {
@@ -31,12 +50,25 @@ export function isValidPushSubscription(value: unknown): value is PushSubscripti
 
   try {
     const endpoint = new URL(candidate.endpoint);
+    const expirationTime = candidate.expirationTime;
     return (
       endpoint.protocol === "https:" &&
+      endpoint.username === "" &&
+      endpoint.password === "" &&
+      endpoint.port === "" &&
+      isKnownPushService(endpoint.hostname) &&
+      candidate.endpoint.length <= 4_096 &&
       typeof keys.p256dh === "string" &&
       keys.p256dh.length > 20 &&
+      keys.p256dh.length <= 512 &&
       typeof keys.auth === "string" &&
-      keys.auth.length > 8
+      keys.auth.length > 8 &&
+      keys.auth.length <= 256 &&
+      (expirationTime === undefined ||
+        expirationTime === null ||
+        (typeof expirationTime === "number" &&
+          Number.isSafeInteger(expirationTime) &&
+          expirationTime > 0))
     );
   } catch {
     return false;
@@ -105,6 +137,90 @@ export async function listPushSubscriptions(): Promise<StoredPushSubscription[]>
     auth: row.auth,
     expirationTime: row.expiration_time ? Number(row.expiration_time) : null,
   }));
+}
+
+export async function claimPushSubscriptionForTest(
+  subscription: PushSubscriptionInput,
+): Promise<TestPushClaim> {
+  const hash = endpointHash(subscription.endpoint);
+  const now = Date.now();
+
+  return withTransaction(async (client) => {
+    await client.query("SELECT pg_advisory_xact_lock(84519324)");
+
+    const existing = await client.query<{
+      endpoint_hash: string;
+      endpoint: string;
+      p256dh: string;
+      auth: string;
+      expiration_time: string | null;
+    }>(
+      `
+        SELECT endpoint_hash, endpoint, p256dh, auth, expiration_time
+        FROM push_subscriptions
+        WHERE endpoint_hash = $1 AND p256dh = $2 AND auth = $3
+        FOR UPDATE
+      `,
+      [hash, subscription.keys.p256dh, subscription.keys.auth],
+    );
+    const stored = existing.rows[0];
+    if (!stored) return { status: "missing" };
+
+    if (stored.expiration_time && Number(stored.expiration_time) <= now) {
+      await client.query(
+        `
+          DELETE FROM push_subscriptions
+          WHERE endpoint_hash = $1 AND p256dh = $2 AND auth = $3
+        `,
+        [hash, subscription.keys.p256dh, subscription.keys.auth],
+      );
+      return { status: "expired" };
+    }
+
+    const deviceLimit = await client.query<{ limited: boolean }>(
+      `
+        SELECT (last_attempt_at > NOW() - INTERVAL '1 minute') AS limited
+        FROM push_test_limits
+        WHERE endpoint_hash = $1
+      `,
+      [hash],
+    );
+    if (deviceLimit.rows[0]?.limited) return { status: "cooldown" };
+
+    await client.query(
+      "DELETE FROM push_test_limits WHERE last_attempt_at <= NOW() - INTERVAL '1 day'",
+    );
+    const globalRate = await client.query<{ count: string }>(`
+      SELECT COUNT(*)::text AS count
+      FROM push_test_limits
+      WHERE last_attempt_at > NOW() - INTERVAL '1 minute'
+    `);
+    if (Number(globalRate.rows[0]?.count ?? 0) >= 20) {
+      return { status: "rate_limited" };
+    }
+
+    await client.query(
+      `
+        INSERT INTO push_test_limits (endpoint_hash, last_attempt_at)
+        VALUES ($1, NOW())
+        ON CONFLICT (endpoint_hash) DO UPDATE SET
+          last_attempt_at = EXCLUDED.last_attempt_at,
+          updated_at = NOW()
+      `,
+      [hash],
+    );
+
+    return {
+      status: "claimed",
+      subscription: {
+        endpointHash: stored.endpoint_hash,
+        endpoint: stored.endpoint,
+        p256dh: stored.p256dh,
+        auth: stored.auth,
+        expirationTime: stored.expiration_time ? Number(stored.expiration_time) : null,
+      },
+    };
+  });
 }
 
 export async function markPushSuccess(hash: string) {
