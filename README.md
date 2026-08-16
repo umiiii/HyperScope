@@ -1,10 +1,26 @@
 # HyperScope
 
+[![Verify and deploy](https://github.com/umiiii/HyperScope/actions/workflows/ci-deploy.yml/badge.svg)](https://github.com/umiiii/HyperScope/actions/workflows/ci-deploy.yml)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Node.js](https://img.shields.io/badge/Node.js-22%2B-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![PWA](https://img.shields.io/badge/PWA-Web%20Push-5A0FC8?style=flat-square&logo=pwa&logoColor=white)](https://developer.mozilla.org/docs/Web/API/Push_API)
+[![Railway](https://img.shields.io/badge/Railway-Web%20%2B%20Worker-0B0D0E?style=flat-square&logo=railway&logoColor=white)](https://railway.app)
+[![Hyperliquid](https://img.shields.io/badge/Hyperliquid-HIP--3%20Ready-97FCE4?style=flat-square)](https://hyperliquid.gitbook.io/hyperliquid-docs)
+
 HyperScope 是一个移动优先的 Hyperliquid 仓位监视 PWA。添加公开地址后，它会保存当前永续仓位作为基线，由 Railway 常驻 worker 每分钟重新读取；检测到开仓、平仓、加减仓、反向、入场均价或杠杆变化时，会通过 Web Push 通知已订阅设备。
 
 应用不需要登录，也不会请求钱包连接、签名或私钥。当前版本按单一使用者的小规模 MVP 设计。
 
 ## 三个界面
+
+| 仪表盘 | 当前仓位 | 仓位变动 | 添加地址 |
+| :---: | :---: | :---: | :---: |
+| [![仪表盘](docs/screenshots/dashboard.png)](docs/screenshots/dashboard.png) | [![当前仓位](docs/screenshots/positions.png)](docs/screenshots/positions.png) | [![仓位变动](docs/screenshots/changes.png)](docs/screenshots/changes.png) | [![添加地址](docs/screenshots/add.png)](docs/screenshots/add.png) |
+| `/` | `/addresses/[id]` | `/addresses/[id]` | `/addresses/new` |
+
+截图使用演示数据，不是真实账户；地址与仓位均为构造值。
 
 - `/`：仪表盘，展示正在监视的地址数、worker 状态与各地址概览；设备开启通知后可向当前设备发送测试通知。
 - `/addresses/new`：添加一个主账户或子账户公开地址。
