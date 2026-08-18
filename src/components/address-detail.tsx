@@ -18,12 +18,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { MobileShell } from "@/components/mobile-shell";
 import type { AddressDetail, PositionEvent } from "@/lib/domain";
 import type { PositionSnapshot } from "@/lib/hyperliquid/types";
+import { mergeAdjacentPositionEvents } from "@/lib/position-events";
 import {
   formatDateTime,
+  formatDateTimeRange,
   formatNumber,
   formatRelativeTime,
   formatUsd,
@@ -32,6 +34,8 @@ import {
 import styles from "./address-detail.module.css";
 
 type AddressDetailViewProps = { id: string };
+
+const MONITOR_KINDS: PositionEvent["kind"][] = ["monitor_started", "monitor_scope_updated"];
 
 function eventMeta(kind: PositionEvent["kind"]) {
   switch (kind) {
@@ -74,6 +78,8 @@ export function AddressDetailView({ id }: AddressDetailViewProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const timeline = useMemo(() => mergeAdjacentPositionEvents(detail?.events ?? []), [detail?.events]);
+  const changeCount = timeline.filter((event) => !MONITOR_KINDS.includes(event.kind)).length;
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setRefreshing(true);
@@ -250,12 +256,13 @@ export function AddressDetailView({ id }: AddressDetailViewProps) {
           <section className={styles.section}>
             <div className={styles.sectionHeading}>
               <div><span>CHANGE LOG</span><h2>仓位变动</h2></div>
-              <strong>{detail.events.filter((event) => !["monitor_started", "monitor_scope_updated"].includes(event.kind)).length}</strong>
+              <strong>{changeCount}</strong>
             </div>
             <div className={styles.timeline}>
-              {detail.events.map((event) => {
+              {timeline.map((event) => {
                 const meta = eventMeta(event.kind);
                 const Icon = meta.icon;
+                const merged = event.mergedCount > 1;
                 return (
                   <article key={event.id} className={styles.event}>
                     <span className={`${styles.eventIcon} ${styles[meta.tone]}`}><Icon size={15} aria-hidden="true" /></span>
@@ -264,9 +271,14 @@ export function AddressDetailView({ id }: AddressDetailViewProps) {
                         <strong>{event.coin ? displayCoin(event.dex, event.coin) : "HyperScope"}</strong>
                         {event.dex && <span>{event.dex.toUpperCase()}</span>}
                         <span>{meta.label}</span>
+                        {merged && <span className={styles.mergedBadge}>合并 {event.mergedCount} 次</span>}
                       </div>
                       <p>{event.summary}</p>
-                      <small>{formatDateTime(event.detectedAt)}</small>
+                      <small>
+                        {merged
+                          ? formatDateTimeRange(event.firstDetectedAt, event.detectedAt)
+                          : formatDateTime(event.detectedAt)}
+                      </small>
                     </div>
                   </article>
                 );

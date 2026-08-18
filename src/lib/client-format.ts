@@ -46,3 +46,21 @@ export function formatDateTime(value: string) {
     second: "2-digit",
   }).format(new Date(value));
 }
+
+function formatTimeOfDay(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
+}
+
+export function formatDateTimeRange(from: string, to: string) {
+  const start = new Date(from);
+  const end = new Date(to);
+  const sameDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate();
+  return `${formatDateTime(from)} → ${sameDay ? formatTimeOfDay(to) : formatDateTime(to)}`;
+}
