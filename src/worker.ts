@@ -90,8 +90,10 @@ async function runCycle() {
             if (!result.success) {
               console.warn(`Monitor failed for ${addressId}: ${result.error}`);
             } else if (result.changes.length > 0) {
+              const muted = result.changes.length - result.notified.length;
               console.log(
-                `Detected ${result.changes.length} position changes for ${addressId}.`,
+                `Detected ${result.changes.length} position changes for ${addressId}` +
+                  (muted > 0 ? `; ${muted} muted by the push cooldown.` : "."),
               );
             }
           } catch (error) {

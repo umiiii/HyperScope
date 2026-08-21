@@ -8,41 +8,41 @@ import { monitorAddress } from "@/lib/monitor";
 
 const ADDRESS = "0x0000000000000000000000000000000000000001";
 
+type PayloadPosition = { coin: string; size: string };
+
 function accountPayload(time: number, size: string | null, coin = "BTC") {
+  return accountPayloadWith(time, size ? [{ coin, size }] : []);
+}
+
+function accountPayloadWith(time: number, positions: PayloadPosition[]) {
+  const funded = positions.length > 0;
+  const summary = {
+    accountValue: funded ? "11000" : "10000",
+    totalMarginUsed: funded ? "1000" : "0",
+    totalNtlPos: funded ? "10000" : "0",
+    totalRawUsd: funded ? "10000" : "0",
+  };
+
   return {
-    marginSummary: {
-      accountValue: size ? "11000" : "10000",
-      totalMarginUsed: size ? "1000" : "0",
-      totalNtlPos: size ? "10000" : "0",
-      totalRawUsd: size ? "10000" : "0",
-    },
-    crossMarginSummary: {
-      accountValue: size ? "11000" : "10000",
-      totalMarginUsed: size ? "1000" : "0",
-      totalNtlPos: size ? "10000" : "0",
-      totalRawUsd: size ? "10000" : "0",
-    },
+    marginSummary: summary,
+    crossMarginSummary: summary,
     crossMaintenanceMarginUsed: "0",
-    withdrawable: size ? "10000" : "10000",
-    assetPositions: size
-      ? [
-          {
-            type: "oneWay",
-            position: {
-              coin,
-              szi: size,
-              entryPx: "100000",
-              positionValue: "10000",
-              unrealizedPnl: "0",
-              returnOnEquity: "0",
-              liquidationPx: "80000",
-              marginUsed: "1000",
-              leverage: { type: "cross", value: 10 },
-              maxLeverage: 40,
-            },
-          },
-        ]
-      : [],
+    withdrawable: "10000",
+    assetPositions: positions.map(({ coin, size }) => ({
+      type: "oneWay",
+      position: {
+        coin,
+        szi: size,
+        entryPx: "100000",
+        positionValue: "10000",
+        unrealizedPnl: "0",
+        returnOnEquity: "0",
+        liquidationPx: "80000",
+        marginUsed: "1000",
+        leverage: { type: "cross", value: 10 },
+        maxLeverage: 40,
+      },
+    })),
     time,
   };
 }
@@ -368,4 +368,123 @@ test("事务外的旧 DEX 目录不会覆盖并发建立的新 DEX 聚合快照"
   const positions = await pool.query("SELECT dex, coin FROM positions");
   assert.equal(address.rows[0]?.account_value, "777");
   assert.deepEqual(positions.rows, [{ dex: "xyz", coin: "xyz:SNDK" }]);
+});
+
+test("同一地址同一 ticker 同方向在冷却窗口内只推送一次", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  resetHyperliquidClientStateForTests();
+  const pool = await setupDatabase();
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    globalThis.hyperScopeDatabasePool = undefined;
+    globalThis.hyperScopeSchemaPromise = undefined;
+    resetHyperliquidClientStateForTests();
+    if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previousDatabaseUrl;
+    await pool.end();
+  });
+
+  const state = { size: null as string | null, time: 1_786_060_800_000 };
+  globalThis.fetch = async (_input, init) => {
+    const body = requestBody(init);
+    if (body.type === "perpDexs") return jsonResponse([null]);
+    return jsonResponse(accountPayload(state.time, state.size));
+  };
+
+  await monitorAddress("address-1");
+
+  state.size = "0.1";
+  state.time += 1_000;
+  const opened = await monitorAddress("address-1");
+  assert.equal(opened.changes[0]?.kind, "opened");
+  assert.equal(opened.notified.length, 1);
+
+  state.size = "0.2";
+  state.time += 1_000;
+  const increased = await monitorAddress("address-1");
+  assert.equal(increased.changes[0]?.kind, "increased");
+  assert.deepEqual(increased.notified, []);
+
+  const recorded = await pool.query(
+    "SELECT 1 FROM position_changes WHERE kind IN ('opened', 'increased')",
+  );
+  const muted = await pool.query("SELECT 1 FROM notification_outbox");
+  assert.equal(recorded.rowCount, 2, "两次变动都应留在仓位变动记录中");
+  assert.equal(muted.rowCount, 1, "冷却窗口内只应产生一条推送");
+
+  await pool.query("UPDATE notification_cooldowns SET last_pushed_at = $1", [
+    new Date(Date.now() - 11 * 60_000),
+  ]);
+  state.size = "0.15";
+  state.time += 1_000;
+  const reduced = await monitorAddress("address-1");
+  assert.equal(reduced.changes[0]?.kind, "reduced");
+  assert.equal(reduced.notified.length, 1);
+
+  const afterWindow = await pool.query("SELECT 1 FROM notification_outbox");
+  assert.equal(afterWindow.rowCount, 2, "冷却过期后应重新推送");
+});
+
+test("冷却按方向与 ticker 分别计算", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  resetHyperliquidClientStateForTests();
+  const pool = await setupDatabase();
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    globalThis.hyperScopeDatabasePool = undefined;
+    globalThis.hyperScopeSchemaPromise = undefined;
+    resetHyperliquidClientStateForTests();
+    if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previousDatabaseUrl;
+    await pool.end();
+  });
+
+  const state = { positions: [] as PayloadPosition[], time: 1_786_060_800_000 };
+  globalThis.fetch = async (_input, init) => {
+    const body = requestBody(init);
+    if (body.type === "perpDexs") return jsonResponse([null]);
+    return jsonResponse(accountPayloadWith(state.time, state.positions));
+  };
+
+  await monitorAddress("address-1");
+
+  state.positions = [{ coin: "BTC", size: "0.1" }];
+  state.time += 1_000;
+  const long = await monitorAddress("address-1");
+  assert.equal(long.notified.length, 1);
+
+  state.positions = [
+    { coin: "BTC", size: "-0.1" },
+    { coin: "ETH", size: "1" },
+  ];
+  state.time += 1_000;
+  const flipped = await monitorAddress("address-1");
+  assert.deepEqual(
+    flipped.changes.map((change) => change.kind).sort(),
+    ["flipped", "opened"],
+    "反向和新 ticker 都应被检测到",
+  );
+  assert.equal(flipped.notified.length, 2, "空仓与另一个 ticker 都不受多仓冷却影响");
+
+  state.positions = [
+    { coin: "BTC", size: "-0.2" },
+    { coin: "ETH", size: "2" },
+  ];
+  state.time += 1_000;
+  const scaled = await monitorAddress("address-1");
+  assert.equal(scaled.changes.length, 2);
+  assert.deepEqual(scaled.notified, [], "同 ticker 同方向的后续加仓应被静音");
+
+  const cooldowns = await pool.query(
+    "SELECT coin, direction FROM notification_cooldowns ORDER BY coin, direction",
+  );
+  const notifications = await pool.query("SELECT 1 FROM notification_outbox");
+  assert.deepEqual(cooldowns.rows, [
+    { coin: "BTC", direction: "long" },
+    { coin: "BTC", direction: "short" },
+    { coin: "ETH", direction: "long" },
+  ]);
+  assert.equal(notifications.rowCount, 2);
 });

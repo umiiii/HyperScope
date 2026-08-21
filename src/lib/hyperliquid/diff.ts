@@ -62,6 +62,18 @@ function absoluteSize(size: string) {
   return visibleFraction ? `${groupedInteger}.${visibleFraction}` : groupedInteger;
 }
 
+export type PositionDirection = "long" | "short";
+
+/** The side a change leaves the position on: its new side, or the side it held
+ *  when the change removed the position. Long and short are tracked apart so a
+ *  push cooldown on one side never mutes the other. */
+export function positionChangeDirection(
+  change: Pick<PositionChange, "before" | "after">,
+): PositionDirection {
+  const size = change.after?.size ?? change.before?.size ?? "0";
+  return decimalSign(size) >= 0 ? "long" : "short";
+}
+
 function positionKey(position: PositionSnapshot) {
   return `${position.dex}\u0000${position.coin}`;
 }

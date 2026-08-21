@@ -121,6 +121,20 @@ export const SCHEMA_STATEMENTS = [
       ON notification_outbox (status, next_attempt_at, created_at)
   `,
   `
+    CREATE TABLE IF NOT EXISTS notification_cooldowns (
+      address_id TEXT NOT NULL REFERENCES monitored_addresses(id) ON DELETE CASCADE,
+      coin TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      last_pushed_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (address_id, coin, direction)
+    )
+  `,
+  `
+    CREATE INDEX IF NOT EXISTS notification_cooldowns_pushed_idx
+      ON notification_cooldowns (last_pushed_at)
+  `,
+  `
     CREATE TABLE IF NOT EXISTS monitor_worker_state (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       state TEXT NOT NULL,

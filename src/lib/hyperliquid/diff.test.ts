@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { detectPositionChanges } from "@/lib/hyperliquid/diff";
+import {
+  detectPositionChanges,
+  positionChangeDirection,
+} from "@/lib/hyperliquid/diff";
 import type { PositionSnapshot } from "@/lib/hyperliquid/types";
 
 function position(overrides: Partial<PositionSnapshot> = {}): PositionSnapshot {
@@ -100,4 +103,15 @@ test("同名币在不同 DEX 中独立比较", () => {
     ],
   );
   assert.match(changes[1]?.summary ?? "", /XYZ/);
+});
+
+test("变动方向取变动后的仓位方向，平仓则取原方向", () => {
+  const long = position({ size: "1" });
+  const short = position({ size: "-1" });
+
+  assert.equal(positionChangeDirection({ before: null, after: long }), "long");
+  assert.equal(positionChangeDirection({ before: null, after: short }), "short");
+  assert.equal(positionChangeDirection({ before: short, after: null }), "short");
+  assert.equal(positionChangeDirection({ before: long, after: short }), "short");
+  assert.equal(positionChangeDirection({ before: short, after: long }), "long");
 });
