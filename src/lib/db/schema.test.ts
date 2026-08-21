@@ -53,6 +53,9 @@ test("删除监视地址会级联清理仓位、事件和待发送通知", () =>
       id, address_id, title, body, target_url, tag
     ) VALUES ('push-1', 'address-1', '仓位变动', 'BTC 开仓', '/addresses/address-1', 'tag-1');
 
+    INSERT INTO notification_cooldowns (address_id, coin, direction, last_pushed_at)
+    VALUES ('address-1', 'BTC', 'long', NOW());
+
     DELETE FROM monitored_addresses WHERE id = 'address-1';
   `);
 
@@ -61,6 +64,7 @@ test("删除监视地址会级联清理仓位、事件和待发送通知", () =>
     "monitored_address_dex_states",
     "position_changes",
     "notification_outbox",
+    "notification_cooldowns",
   ]) {
     const result = database.public.one(`SELECT COUNT(*)::int AS count FROM ${table}`);
     assert.equal(result.count, 0, `${table} 应已级联清理`);

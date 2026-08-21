@@ -1,7 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { ensureSchema, getDatabasePool, withTransaction } from "@/lib/db";
-import { detectPositionChanges } from "@/lib/hyperliquid/diff";
+import {
+  detectPositionChanges,
+  positionChangeDirection,
+} from "@/lib/hyperliquid/diff";
 import { fetchHyperliquidAccount } from "@/lib/hyperliquid/client";
 import type {
   PositionChange,
@@ -14,6 +17,7 @@ import {
   retryNotification,
 } from "@/lib/repository/outbox";
 import { getMonitorIntervalMs } from "@/lib/repository/addresses";
+import { claimPushSlots, pushCooldownId } from "@/lib/repository/push-cooldowns";
 
 type MonitorAddressRow = {
   id: string;
@@ -48,6 +52,9 @@ export type MonitorResult = {
   success: boolean;
   initialSnapshot: boolean;
   changes: PositionChange[];
+  /** The subset of `changes` that was queued for push; the rest sat inside a
+   *  cooldown window and only reached the position timeline. */
+  notified: PositionChange[];
   error?: string;
 };
 
@@ -153,6 +160,35 @@ async function replaceDexPositions(
   }
 }
 
+/**
+ * Keeps only the changes whose address+ticker+direction is out of its push
+ * cooldown, and starts a fresh cooldown for each one kept. Everything filtered
+ * out stays in `position_changes`, so the timeline keeps every change while the
+ * device only hears about a given position side once per window.
+ */
+async function selectNotifiableChanges(
+  client: PoolClient,
+  addressId: string,
+  changes: PositionChange[],
+) {
+  if (changes.length === 0) return [];
+
+  const candidates = changes.map((change) => ({
+    change,
+    key: { coin: change.coin, direction: positionChangeDirection(change) },
+  }));
+  const claimed = await claimPushSlots(
+    client,
+    addressId,
+    candidates.map((candidate) => candidate.key),
+    new Date(),
+  );
+
+  return candidates
+    .filter((candidate) => claimed.has(pushCooldownId(candidate.key)))
+    .map((candidate) => candidate.change);
+}
+
 async function recordChanges(
   client: PoolClient,
   address: MonitorAddressRow,
@@ -194,12 +230,14 @@ async function recordChanges(
     if ((result.rowCount ?? 0) > 0) accepted.push(change);
   }
 
-  if (accepted.length > 0) {
+  const notified = await selectNotifiableChanges(client, address.id, accepted);
+
+  if (notified.length > 0) {
     const displayName = address.label || `${address.address.slice(0, 6)}…${address.address.slice(-4)}`;
     const body =
-      accepted.length === 1
-        ? accepted[0].summary
-        : `${accepted[0].summary}，另有 ${accepted.length - 1} 项变动`;
+      notified.length === 1
+        ? notified[0].summary
+        : `${notified[0].summary}，另有 ${notified.length - 1} 项变动`;
     await client.query(
       `
         INSERT INTO notification_outbox (
@@ -218,7 +256,7 @@ async function recordChanges(
     );
   }
 
-  return accepted;
+  return { accepted, notified };
 }
 
 export async function monitorAddress(addressId: string): Promise<MonitorResult> {
@@ -270,7 +308,13 @@ export async function monitorAddress(addressId: string): Promise<MonitorResult> 
         address.last_checked_at === null,
       ],
     );
-    return { success: false, initialSnapshot: false, changes: [], error: message };
+    return {
+      success: false,
+      initialSnapshot: false,
+      changes: [],
+      notified: [],
+      error: message,
+    };
   }
 
   return withTransaction(async (client) => {
@@ -285,7 +329,13 @@ export async function monitorAddress(addressId: string): Promise<MonitorResult> 
     );
     const lockedAddress = lockedResult.rows[0];
     if (!lockedAddress) {
-      return { success: false, initialSnapshot: false, changes: [], error: "地址已停止监视。" };
+      return {
+        success: false,
+        initialSnapshot: false,
+        changes: [],
+        notified: [],
+        error: "地址已停止监视。",
+      };
     }
     const dexStateResult = await client.query<DexStateRow>(
       `
@@ -305,21 +355,21 @@ export async function monitorAddress(addressId: string): Promise<MonitorResult> 
       (dex) => !candidateDexes.has(dex),
     );
     if (missesKnownDex) {
-      return { success: true, initialSnapshot: false, changes: [] };
+      return { success: true, initialSnapshot: false, changes: [], notified: [] };
     }
     const containsOlderSnapshot = candidateTimes.some(([dex, time]) => {
       const previousTime = previousSnapshotTimes.get(dex);
       return previousTime ? time < previousTime.getTime() : false;
     });
     if (containsOlderSnapshot) {
-      return { success: true, initialSnapshot: false, changes: [] };
+      return { success: true, initialSnapshot: false, changes: [], notified: [] };
     }
     const hasFreshSnapshot = candidateTimes.some(([dex, time]) => {
       const previousTime = previousSnapshotTimes.get(dex);
       return !previousTime || time > previousTime.getTime();
     });
     if (!hasFreshSnapshot) {
-      return { success: true, initialSnapshot: false, changes: [] };
+      return { success: true, initialSnapshot: false, changes: [], notified: [] };
     }
 
     const previousPositions = await loadStoredPositions(client, addressId);
@@ -357,7 +407,7 @@ export async function monitorAddress(addressId: string): Promise<MonitorResult> 
       );
     }
 
-    const acceptedChanges = await recordChanges(
+    const { accepted: acceptedChanges, notified } = await recordChanges(
       client,
       lockedAddress,
       changes,
@@ -432,6 +482,7 @@ export async function monitorAddress(addressId: string): Promise<MonitorResult> 
       success: true,
       initialSnapshot,
       changes: acceptedChanges,
+      notified,
     };
   });
 }
