@@ -7,6 +7,7 @@ import {
   Check,
   Clipboard,
   Gauge,
+  History,
   LoaderCircle,
   RefreshCw,
   Repeat2,
@@ -26,6 +27,7 @@ import { mergeAdjacentPositionEvents } from "@/lib/position-events";
 import {
   formatDateTime,
   formatDateTimeRange,
+  formatFetchedAt,
   formatNumber,
   formatRelativeTime,
   formatUsd,
@@ -190,6 +192,10 @@ export function AddressDetailView({ id }: AddressDetailViewProps) {
               <span>永续 DEX 账户价值</span>
               <strong>{formatUsd(detail.accountValue)}</strong>
               <small>各永续 DEX 汇总 · {formatRelativeTime(detail.lastCheckedAt)}更新</small>
+              <small className={styles.fetchedAt}>
+                <History size={11} aria-hidden="true" />
+                最后获取数据 {formatFetchedAt(detail.lastCheckedAt)}
+              </small>
             </div>
             <div className={styles.accountGrid}>
               <div><span>DEX 可提取</span><strong>{formatUsd(detail.withdrawable, true)}</strong></div>

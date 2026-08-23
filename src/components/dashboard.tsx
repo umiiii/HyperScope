@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowUpRight,
   ChevronRight,
+  History,
   Plus,
   Radar,
   RefreshCw,
@@ -14,13 +15,24 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MobileShell } from "@/components/mobile-shell";
 import { PushEnrollment } from "@/components/push-enrollment";
-import type { DashboardData } from "@/lib/domain";
+import { latestFetchedAt, type DashboardData } from "@/lib/domain";
 import {
+  formatFetchedAt,
   formatRelativeTime,
   formatUsd,
   shortAddress,
 } from "@/lib/client-format";
 import styles from "./dashboard.module.css";
+
+function freshnessHint(
+  data: DashboardData | null,
+  error: string | null,
+  lastFetchedAt: string | null,
+) {
+  if (!data) return error ? "暂时无法读取监视状态" : "正在读取监视状态";
+  if (!lastFetchedAt) return "等待第一次读取";
+  return `${formatRelativeTime(lastFetchedAt)}读取自 Hyperliquid`;
+}
 
 export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -60,6 +72,11 @@ export function Dashboard() {
       pnl: addresses.reduce((sum, address) => sum + Number(address.unrealizedPnl || 0), 0),
     };
   }, [data]);
+
+  const lastFetchedAt = useMemo(
+    () => latestFetchedAt(data?.addresses ?? []),
+    [data],
+  );
 
   const workerStale = data?.worker
     ? observedAt - new Date(data.worker.updatedAt).getTime() > Math.max(180_000, data.monitorIntervalMs * 3)
@@ -116,6 +133,17 @@ export function Dashboard() {
             {formatUsd(totals.pnl, true)}
           </strong>
         </div>
+      </section>
+
+      <section className={styles.freshness} aria-label="最后获取数据时间">
+        <span className={styles.freshnessLabel}>
+          <History size={13} aria-hidden="true" />
+          最后获取数据
+        </span>
+        <span className={styles.freshnessValue}>
+          <strong>{data ? formatFetchedAt(lastFetchedAt) : "—"}</strong>
+          <small>{freshnessHint(data, error, lastFetchedAt)}</small>
+        </span>
       </section>
 
       <PushEnrollment />

@@ -118,6 +118,16 @@
 .accountValue strong { color: var(--text); font-size: 33px; letter-spacing: -0.045em; }
 .accountValue small { margin-top: 7px; color: var(--muted); font-size: 9px; }
 
+.accountValue .fetchedAt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--muted-strong);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
 .accountGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

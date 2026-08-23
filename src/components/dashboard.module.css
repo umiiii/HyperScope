@@ -175,6 +175,50 @@
   font-size: 19px;
 }
 
+.freshness {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: var(--surface);
+}
+
+.freshnessLabel {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.freshnessValue {
+  min-width: 0;
+  text-align: right;
+}
+
+.freshnessValue strong,
+.freshnessValue small {
+  display: block;
+}
+
+.freshnessValue strong {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+.freshnessValue small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
 .addressSection {
   margin-top: 34px;
 }

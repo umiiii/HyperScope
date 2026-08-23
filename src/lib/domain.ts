@@ -50,3 +50,18 @@ export type DashboardData = {
   worker: WorkerStatus;
   monitorIntervalMs: number;
 };
+
+export function latestFetchedAt(
+  addresses: readonly Pick<AddressSummary, "lastCheckedAt">[],
+): string | null {
+  let latest: string | null = null;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const address of addresses) {
+    if (!address.lastCheckedAt) continue;
+    const time = new Date(address.lastCheckedAt).getTime();
+    if (!Number.isFinite(time) || time <= latestTime) continue;
+    latest = address.lastCheckedAt;
+    latestTime = time;
+  }
+  return latest;
+}
