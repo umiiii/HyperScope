@@ -37,6 +37,21 @@ export function formatRelativeTime(value: string | null) {
   }).format(new Date(value));
 }
 
+export function formatFetchedAt(value: string | null) {
+  if (!value) return "尚未获取数据";
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return "尚未获取数据";
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(parsed);
+}
+
 export function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     month: "short",
